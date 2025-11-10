@@ -4,14 +4,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from influxdb_client import InfluxDBClient
-from sklearn.linear_model import LinearRegression
+from prophet import Prophet
 import altair as alt
-from datetime import timedelta
 
 # --- Configuración de página ---
 st.set_page_config(page_title="Tablero IoT - Extreme Manufacturing", layout="wide")
 st.title("🏭 Tablero de Monitoreo IoT")
-st.markdown("Visualización de datos de **temperatura, humedad y vibración** desde InfluxDB")
+st.markdown("Visualización y análisis de **temperatura, humedad y vibración** desde InfluxDB con predicciones usando **Prophet**")
 
 # --- Parámetros de conexión (usa tus credenciales) ---
 INFLUXDB_URL = "https://us-east-1-1.aws.cloud2.influxdata.com"
@@ -22,15 +21,15 @@ INFLUXDB_BUCKET = "EXTREME_MANUFACTURING"
 # --- Sidebar (Controles) ---
 st.sidebar.header("⚙️ Controles")
 
-# Slider para elegir cantidad de días de antigüedad
+# Slider de días
 dias = st.sidebar.slider("Seleccionar número de días hacia atrás", min_value=1, max_value=30, value=7)
 start = f"-{dias}d"
 stop = "now()"
 
-# Selección de fuente de datos
+# Fuente de datos
 fuente = st.sidebar.radio("Fuente de datos", ["DHT22 (Temperatura/Humedad)", "MPU6050 (Vibración)"])
 
-# Selección de variable para predicción
+# Variable a predecir
 pred_var = st.sidebar.selectbox("Variable para predecir:", ["temperatura", "humedad", "accel_x", "accel_y", "accel_z"])
 
 # --- Funciones de consulta ---
@@ -74,7 +73,7 @@ def get_data_mpu6050(start="-7d", stop="now()"):
         df.index = pd.to_datetime(df.index)
     return df
 
-# --- Funciones de análisis ---
+# --- Funciones auxiliares ---
 def kpis(df, var):
     if df.empty or var not in df.columns:
         return None
@@ -99,18 +98,21 @@ def plot_timeseries(df, variables):
     st.altair_chart(chart, use_container_width=True)
 
 
-def predict_linear(series: pd.Series, horizon=20):
-    s = series.dropna()
-    if s.empty:
-        return pd.Series([])
-    X = np.arange(len(s)).reshape(-1, 1)
-    y = s.values
-    model = LinearRegression().fit(X, y)
-    future_X = np.arange(len(s), len(s) + horizon).reshape(-1, 1)
-    preds = model.predict(future_X)
-    freq = s.index.inferred_freq or "1h"
-    future_index = pd.date_range(start=s.index[-1], periods=horizon + 1, freq=freq)[1:]
-    return pd.Series(preds, index=future_index)
+def predict_prophet(df, variable, horizonte_horas=24):
+    """Predicción usando Prophet"""
+    serie = df[[variable]].dropna().reset_index()
+    serie.columns = ["ds", "y"]  # Prophet requiere estas columnas
+    if len(serie) < 10:
+        st.warning("No hay suficientes datos para entrenar el modelo.")
+        return None, None
+
+    model = Prophet(daily_seasonality=True)
+    model.fit(serie)
+
+    # Crear dataframe futuro
+    future = model.make_future_dataframe(periods=horizonte_horas, freq="H")
+    forecast = model.predict(future)
+    return serie, forecast
 
 # --- Carga de datos según fuente ---
 if fuente.startswith("DHT22"):
@@ -122,7 +124,7 @@ else:
     st.subheader(f"📈 Datos del sensor MPU6050 (últimos {dias} días)")
     variables = [v for v in ["accel_x", "accel_y", "accel_z", "gyro_x", "gyro_y", "gyro_z", "temperature"] if v in df.columns]
 
-# --- Visualización ---
+# --- Visualización de datos ---
 if not df.empty:
     for var in variables:
         st.markdown(f"### {var}")
@@ -131,13 +133,20 @@ if not df.empty:
 else:
     st.warning("No se encontraron datos para el rango consultado.")
 
-# --- Predicción ---
-st.subheader("🔮 Predicción (modelo lineal simple)")
-if pred_var in df.columns and st.button("Generar predicción"):
-    pred = predict_linear(df[pred_var], horizon=30)
-    if not pred.empty:
-        pred_df = pd.DataFrame({"Tiempo": pred.index, "Predicción": pred.values})
-        st.line_chart(pred_df.set_index("Tiempo"))
-        st.success(f"Predicción generada correctamente para '{pred_var}'.")
+# --- Predicción con Prophet ---
+st.subheader("🔮 Predicción con Prophet")
+
+horizonte = st.slider("Seleccionar horizonte de predicción (horas)", min_value=6, max_value=72, value=24, step=6)
+
+if pred_var in df.columns and st.button("Generar predicción con Prophet"):
+    serie, forecast = predict_prophet(df, pred_var, horizonte)
+    if forecast is not None:
+        st.success(f"Predicción generada correctamente para '{pred_var}'")
+        # Gráfico interactivo con Altair
+        forecast_plot = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]]
+        base = alt.Chart(forecast_plot).encode(x="ds:T")
+        line = base.mark_line(color="blue").encode(y="yhat:Q")
+        band = base.mark_area(opacity=0.2, color="lightblue").encode(y="yhat_lower:Q", y2="yhat_upper:Q")
+        st.altair_chart(band + line, use_container_width=True)
     else:
-        st.warning("No hay suficientes datos para predecir.")
+        st.warning("No se pudo generar la predicción.")
