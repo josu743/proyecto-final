@@ -4,3 +4,4 @@ numpy
 altair
 scikit-learn
 influxdb-client
+prophet
