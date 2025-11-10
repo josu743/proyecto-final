@@ -22,7 +22,7 @@ INFLUXDB_BUCKET = "EXTREME_MANUFACTURING"
 st.sidebar.header("⚙️ Controles")
 
 # Slider de días
-dias = st.sidebar.slider("Seleccionar número de días hacia atrás", min_value=1, max_value=30, value=7)
+dias = st.sidebar.slider("Seleccionar número de días hacia atrás", min_value=1, max_value=30, value=1)
 start = f"-{dias}d"
 stop = "now()"
 
