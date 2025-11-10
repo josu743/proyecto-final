@@ -6,6 +6,7 @@ import numpy as np
 from influxdb_client import InfluxDBClient
 from sklearn.linear_model import LinearRegression
 import altair as alt
+from datetime import timedelta
 
 # --- Configuración de página ---
 st.set_page_config(page_title="Tablero IoT - Extreme Manufacturing", layout="wide")
@@ -18,9 +19,23 @@ INFLUXDB_TOKEN = "JcKXoXE30JQvV9Ggb4-zv6sQc0Zh6B6Haz5eMRW0FrJEduG2KcFJN9-7RoYvVO
 INFLUXDB_ORG = "0925ccf91ab36478"
 INFLUXDB_BUCKET = "EXTREME_MANUFACTURING"
 
-# --- Función para consultar datos ---
+# --- Sidebar (Controles) ---
+st.sidebar.header("⚙️ Controles")
+
+# Slider para elegir cantidad de días de antigüedad
+dias = st.sidebar.slider("Seleccionar número de días hacia atrás", min_value=1, max_value=30, value=7)
+start = f"-{dias}d"
+stop = "now()"
+
+# Selección de fuente de datos
+fuente = st.sidebar.radio("Fuente de datos", ["DHT22 (Temperatura/Humedad)", "MPU6050 (Vibración)"])
+
+# Selección de variable para predicción
+pred_var = st.sidebar.selectbox("Variable para predecir:", ["temperatura", "humedad", "accel_x", "accel_y", "accel_z"])
+
+# --- Funciones de consulta ---
 @st.cache_data(ttl=300)
-def get_data_dht22(start="-15d", stop="-10d"):
+def get_data_dht22(start="-7d", stop="now()"):
     query = f'''
     from(bucket: "{INFLUXDB_BUCKET}")
       |> range(start: {start}, stop: {stop})
@@ -39,7 +54,7 @@ def get_data_dht22(start="-15d", stop="-10d"):
 
 
 @st.cache_data(ttl=300)
-def get_data_mpu6050(start="-8d", stop="-7d"):
+def get_data_mpu6050(start="-7d", stop="now()"):
     query = f'''
     from(bucket: "{INFLUXDB_BUCKET}")
       |> range(start: {start}, stop: {stop})
@@ -97,23 +112,17 @@ def predict_linear(series: pd.Series, horizon=20):
     future_index = pd.date_range(start=s.index[-1], periods=horizon + 1, freq=freq)[1:]
     return pd.Series(preds, index=future_index)
 
-
-# --- Sidebar ---
-st.sidebar.header("⚙️ Controles")
-fuente = st.sidebar.radio("Fuente de datos", ["DHT22 (Temperatura/Humedad)", "MPU6050 (Vibración)"])
-pred_var = st.sidebar.selectbox("Variable para predecir:", ["temperatura", "humedad", "accel_x", "accel_y", "accel_z"])
-
-# --- Cargar datos según selección ---
+# --- Carga de datos según fuente ---
 if fuente.startswith("DHT22"):
-    df = get_data_dht22()
-    st.subheader("🌡️ Datos del sensor DHT22")
+    df = get_data_dht22(start, stop)
+    st.subheader(f"🌡️ Datos del sensor DHT22 (últimos {dias} días)")
     variables = [v for v in ["temperatura", "humedad", "sensacion_termica"] if v in df.columns]
 else:
-    df = get_data_mpu6050()
-    st.subheader("📈 Datos del sensor MPU6050")
+    df = get_data_mpu6050(start, stop)
+    st.subheader(f"📈 Datos del sensor MPU6050 (últimos {dias} días)")
     variables = [v for v in ["accel_x", "accel_y", "accel_z", "gyro_x", "gyro_y", "gyro_z", "temperature"] if v in df.columns]
 
-# --- Mostrar KPIs y gráficos ---
+# --- Visualización ---
 if not df.empty:
     for var in variables:
         st.markdown(f"### {var}")
@@ -132,4 +141,3 @@ if pred_var in df.columns and st.button("Generar predicción"):
         st.success(f"Predicción generada correctamente para '{pred_var}'.")
     else:
         st.warning("No hay suficientes datos para predecir.")
-
