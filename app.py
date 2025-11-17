@@ -22,7 +22,7 @@ INFLUXDB_BUCKET = "EXTREME_MANUFACTURING"
 st.sidebar.header("⚙️ Controles")
 
 # Slider de días
-dias = st.sidebar.slider("Seleccionar número de días hacia atrás", min_value=1, max_value=30, value=1)
+dias = st.sidebar.slider("Seleccionar número de días hacia atrás", min_value=1, max_value=5, value=1)
 start = f"-{dias}d"
 stop = "now()"
 
@@ -30,7 +30,7 @@ stop = "now()"
 fuente = st.sidebar.radio("Fuente de datos", ["DHT22 (Temperatura/Humedad)", "MPU6050 (Vibración)"])
 
 # Variable a predecir
-pred_var = st.sidebar.selectbox("Variable para predecir:", ["temperatura", "humedad", "accel_x", "accel_y", "accel_z"])
+pred_var = st.sidebar.selectbox("Variable para predecir:", ["temperatura", "humedad"])
 
 # --- Funciones de consulta ---
 @st.cache_data(ttl=300)
