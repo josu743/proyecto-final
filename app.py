@@ -175,7 +175,7 @@ if pred_var in df.columns and st.button("Generar predicción con Prophet"):
         # Gráfico interactivo con Altair
         forecast_plot = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]]
         base = alt.Chart(forecast_plot).encode(x="ds:T")
-        line = base.mark_line(color="blue").encode(y="yhat:Q")
+        line = base.mark_line(color="red").encode(y="yhat:Q")
         band = base.mark_area(opacity=0.2, color="lightblue").encode(y="yhat_lower:Q", y2="yhat_upper:Q")
         st.altair_chart(band + line, use_container_width=True)
     else:
