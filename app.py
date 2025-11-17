@@ -99,20 +99,50 @@ def plot_timeseries(df, variables):
 
 
 def predict_prophet(df, variable, horizonte_horas=24):
-    """Predicción usando Prophet"""
-    serie = df[[variable]].dropna().reset_index()
-    serie.columns = ["ds", "y"]  # Prophet requiere estas columnas
-    if len(serie) < 10:
-        st.warning("No hay suficientes datos para entrenar el modelo.")
+    """Predicción usando Prophet con limpieza completa incluida eliminación de timezone"""
+    
+    if variable not in df.columns:
+        st.error(f"La variable '{variable}' no existe en los datos.")
         return None, None
 
-    model = Prophet(daily_seasonality=True)
-    model.fit(serie)
+    # Preparar dataframe
+    serie = df[[variable]].dropna().reset_index()
+    serie.columns = ["ds", "y"]
 
-    # Crear dataframe futuro
+    # QUITAR TIMEZONE
+    serie["ds"] = pd.to_datetime(serie["ds"]).dt.tz_localize(None)
+
+    # Asegurar formato numérico
+    serie["y"] = pd.to_numeric(serie["y"], errors="coerce")
+    serie = serie.dropna()
+
+    # Ordenar y limpiar duplicados
+    serie = serie.sort_values("ds")
+    serie = serie[~serie["ds"].duplicated()]
+
+    # Verificar tamaño mínimo
+    if len(serie) < 10:
+        st.error("No hay suficientes datos válidos para entrenar Prophet (mínimo 10 puntos).")
+        return None, None
+
+    # Entrenar modelo
+    try:
+        model = Prophet(daily_seasonality=True)
+        model.fit(serie)
+    except Exception as e:
+        st.error(f"Error al entrenar Prophet: {e}")
+        return None, None
+
+    # Crear predicción
     future = model.make_future_dataframe(periods=horizonte_horas, freq="H")
+
+    # QUITAR TIMEZONE EN FUTURO TAMBIÉN
+    future["ds"] = future["ds"].dt.tz_localize(None)
+
     forecast = model.predict(future)
+
     return serie, forecast
+
 
 # --- Carga de datos según fuente ---
 if fuente.startswith("DHT22"):
